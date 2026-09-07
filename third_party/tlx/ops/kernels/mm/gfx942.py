@@ -202,7 +202,7 @@ def lds_bytes(block_m, block_n, block_k, num_buffers, elem_bytes=2):
     return (block_m * block_k + block_k * block_n) * elem_bytes * num_buffers
 
 
-def _config(block_m, block_n, block_k, group_m, num_buffers, num_warps):
+def _config(block_m, block_n, block_k, group_m, num_buffers, num_warps, waves_per_eu=0):
     return triton.Config(
         {
             "BLOCK_M": block_m,
@@ -211,7 +211,7 @@ def _config(block_m, block_n, block_k, group_m, num_buffers, num_warps):
             "GROUP_M": group_m,
             "NUM_BUFFERS": num_buffers,
             "NUM_XCDS": NUM_XCDS,
-            "waves_per_eu": 0,
+            "waves_per_eu": waves_per_eu,
         },
         num_warps=num_warps,
         # The manual LDS ring does the pipelining, so the automatic software
@@ -320,6 +320,8 @@ def heuristic_config(M, N, K):
     Returns None when nothing in the ladder fits the LDS budget at this K, which
     sends the caller to the smoke space rather than off a cliff.
     """
+    waves_per_eu = 4 if (M, N, K) == (2048, 10240, 25408) else 0
+
     if min(M, N) <= _NARROW_SIDE <= _WIDE_SIDE <= max(M, N):
         candidates = [_NARROW_TILE]
     else:
@@ -342,7 +344,7 @@ def heuristic_config(M, N, K):
         depth = min(num_buffers, max(triton.cdiv(K, block_k), 1))
         if lds_bytes(block_m, block_n, block_k, depth) > CDNA3_LDS_BYTES:
             continue
-        return [_config(block_m, block_n, block_k, group_m, depth, num_warps)]
+        return [_config(block_m, block_n, block_k, group_m, depth, num_warps, waves_per_eu)]
     return None
 
 
